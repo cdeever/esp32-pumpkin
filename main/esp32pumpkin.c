@@ -1,6 +1,8 @@
 #include "driver/i2s.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
+
 #include "driver/gpio.h"
 #include "esp_log.h"
 
@@ -13,6 +15,10 @@
 extern const unsigned int sampleRate;
 extern const unsigned int sampleCount;
 extern const signed char samples[];  // Your PCM audio data
+
+volatile int motion_detected;
+SemaphoreHandle_t xLedMutex;
+
 
 // I2S configuration
 #define I2S_NUM         (0)  // I2S port number
@@ -64,57 +70,56 @@ void init_pir_sensor() {
     gpio_config(&io_conf);                   // Configure the GPIO with the settings
 }
 
-void play_audio(void *pvParameter) {
+void play_audio_task(void *pvParameter) {
     int i = 0;
     int16_t sample16;
     size_t bytes_written;
 
-    while (i < sampleCount) {
-        // Convert 8-bit signed sample to 16-bit signed (centered around 0)
-        sample16 = (int16_t)samples[i] << 8;
+    if (motion_detected >= 1) {
+        while (i < sampleCount) {
+            // Convert 8-bit signed sample to 16-bit signed (centered around 0)
+            sample16 = (int16_t)samples[i] << 8;
 
-        // Send the sample to the I2S peripheral
-        i2s_write(I2S_NUM, &sample16, sizeof(sample16), &bytes_written, portMAX_DELAY);
+            // Send the sample to the I2S peripheral
+            i2s_write(I2S_NUM, &sample16, sizeof(sample16), &bytes_written, portMAX_DELAY);
 
-        i++;
+            i++;
+        }
     }
-    vTaskDelete(NULL);
+    vTaskDelay(100 / portTICK_PERIOD_MS); 
 }
 
-
-void pir_task(void *pvParameter) {
-    int pir_state = 0;
-    led_strip_handle_t led_strip = neopixel_init();
+void check_pir_sensor_task(void *pvParameter) {
 
     while (1) {
         // Read the state of the PIR sensor
-        pir_state = gpio_get_level(PIR_IO);
+        motion_detected = gpio_get_level(PIR_IO);
 
-        if (pir_state == 1) {
-            // Motion detected, play the sound
-            ESP_LOGI("PIR_TASK", "Motion detected! Playing sound...");
-            xTaskCreate(play_audio, "play_audio", 2048, NULL, 5, NULL);
-            vTaskDelay(800 / portTICK_PERIOD_MS);  // todo - fix this kludge
-            show_lights(led_strip);
+        if (motion_detected >= 1) {
+            ESP_LOGI("PIR_TASK", "Motion detected! Playing sound and strobe...");
+            vTaskDelay(20 / portTICK_PERIOD_MS);  // leave it for just enough to let the tasks pick it up once
+            motion_detected = 0;                    // reset to avoid double fires
+            vTaskDelay(20000 / portTICK_PERIOD_MS);  // avoid multiples
+        } else {
+            vTaskDelay(1000 / portTICK_PERIOD_MS); 
         }
-
-        // Small delay to prevent rapid polling
-        vTaskDelay(4000 / portTICK_PERIOD_MS);  
     }
 }
 
 void app_main() {
+ 
+    // show flame and strobe need to take turns
+    xLedMutex = xSemaphoreCreateMutex();
 
-    // Initialize I2S
-    i2s_init();
-
-    // Initialize the PIR sensor
+    // Initialize devices
     init_pir_sensor();
+    xTaskCreate(check_pir_sensor_task, "check_sensor", 2048, NULL, 5, NULL);
 
-    neopixel_init(39, 2);
+    i2s_init();
+    xTaskCreate(play_audio_task, "play_audio", 2048, NULL, 5, NULL);
 
-    // Create a FreeRTOS task to watch for motion
-    xTaskCreate(&pir_task, "pir_task", 2048, NULL, 5, NULL);
+    led_strip_handle_t led_strip = neopixel_init();
+    xTaskCreate(show_flame_task, "show_flame", 2048, (void *)led_strip, 5, NULL);
+    xTaskCreate(strobe_lights_task, "strobe_lights", 2048, (void *)led_strip, 5, NULL);
 
 }
-

@@ -13,7 +13,10 @@
 // Initialize the NeoPixel LED strip with a specific GPIO pin and brightness level
 led_strip_handle_t neopixel_init();
 
-// show the animation
-void show_lights(led_strip_handle_t led_strip);
+void strobe_lights_task(void *arg);
+
+void show_flame_task(void *arg); 
+
+void clear_lights(led_strip_handle_t led_strip);
 
 #endif  // NEOPIXEL_H
