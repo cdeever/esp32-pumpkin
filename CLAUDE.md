@@ -77,7 +77,7 @@ extern const unsigned int sampleCount;
 extern const signed char samples[];  // 8-bit PCM data
 ```
 
-Switch audio by changing the include in esp32pumpkin.c:12. Multiple pre-converted samples available in main/ directory.
+The audio playback task (esp32pumpkin.c:73) converts 8-bit signed samples to 16-bit by left-shifting 8 bits before sending to I2S. Switch audio by changing the include in esp32pumpkin.c:12. Multiple pre-converted samples available in main/ directory.
 
 ## Code Organization
 
@@ -102,11 +102,16 @@ To add new audio samples:
 ### GPIO Pin Definitions
 
 All GPIO assignments are hardcoded in esp32pumpkin.c and neopixel.c. Current configuration:
-- I2S: GPIOs 37, 33, 34
+- I2S: GPIOs 37 (BCK), 33 (WS), 34 (DO)
 - PIR: GPIO 38
 - LED: GPIO 39
 
-Note: Pin definitions appear in multiple locations (PIR_IO, RGB_IO macros vs neopixel_init hardcoded value). Verify consistency when modifying.
+**Important**: Pin definitions appear in multiple locations:
+- esp32pumpkin.c:24-30 defines macros for I2S_BCK_IO, I2S_WS_IO, I2S_DO_IO, PIR_IO, RGB_IO
+- neopixel.c:33 hardcodes GPIO 39 in led_strip_config_t
+- neopixel.c:19-20 has unused LED_STRIP_GPIO_PIN macro (value 18)
+
+When modifying GPIO assignments, update all locations to maintain consistency.
 
 ### LED Effect Parameters
 
@@ -129,8 +134,21 @@ PIR sensor logic (esp32pumpkin.c:92):
 3. 20-second cooldown before next detection possible
 4. Audio and strobe tasks check flag independently
 
-### Known Configuration Details
+### Component Dependencies
 
-- Project uses managed component: espressif__led_strip (in managed_components/)
-- ESP32-S2 target with 2MB flash
-- No custom Cursor or Copilot rules present
+The main component (main/CMakeLists.txt:4) requires:
+- `esp_driver_i2s`: I2S audio peripheral driver
+- `esp_driver_gpio`: GPIO control
+- `driver`: General driver support
+
+The project uses managed component `espressif__led_strip` for WS2812B LED control via RMT peripheral.
+
+### Important Implementation Details
+
+**Task Priorities**: All tasks created with priority 5 (esp32pumpkin.c:116-123). Tasks run cooperatively based on delays and mutex availability.
+
+**Audio Playback**: The play_audio_task runs continuously but only outputs samples when motion_detected >= 1. After playing once, it delays 100ms and checks flag again (esp32pumpkin.c:89).
+
+**LED Mutex Pattern**: Both flame and strobe tasks check motion_detected AND acquire xLedMutex before proceeding. This ensures only one effect runs at a time. Tasks that fail to acquire mutex wait 100ms and retry.
+
+**Pixel Format**: LEDs use GRB format (not RGB). When calling led_strip_set_pixel(), parameters are (strip, index, G, R, B) - note the order in neopixel.c:68 and neopixel.c:105.
