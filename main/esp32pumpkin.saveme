@@ -1,0 +1,119 @@
+#include "driver/i2s_std.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "esp_log.h"
+
+//#include "485802__grez1__scream14.h"
+#include "132806__nanakisan__evil-laugh-12.h"
+
+// PCM data from sample.h
+extern const unsigned int sampleRate;
+extern const unsigned int sampleCount;
+extern const signed char samples[];  // Your PCM audio data
+
+// I2S configuration
+#define I2S_NUM         (0)  // I2S port number
+#define I2S_BCK_IO      (37) // I2S Bit Clock
+#define I2S_WS_IO       (33) // I2S Word Select (LR Clock)
+#define I2S_DO_IO       (34) // I2S Data Out
+
+#define PIR_IO          (38) // Motion Sensor Data
+#define RGB_IO          (39) // RGB Data
+
+// Global variable for I2S channel
+i2s_chan_handle_t tx_channel;
+
+void i2s_init() {
+    // Define the I2S standard configuration
+    i2s_std_config_t i2s_std_cfg = {
+        .clk_cfg = {
+            .sample_rate_hz = sampleRate,            // Set the sample rate (e.g., 44100 Hz)
+            .mclk_multiple = I2S_MCLK_MULTIPLE_1152  // Use an available multiple
+        },
+        .slot_cfg = {
+            .data_bit_width = I2S_DATA_BIT_WIDTH_16BIT,
+            .slot_mode = I2S_SLOT_MODE_MONO         // Mono mode
+        },
+        .gpio_cfg = {
+            .mclk = I2S_GPIO_UNUSED,    // Set the GPIO pins according to your wiring
+            .bclk = I2S_BCK_IO,
+            .ws = I2S_WS_IO,
+            .dout = I2S_DO_IO,
+            .din = I2S_GPIO_UNUSED      // Not using data in
+        }
+    };
+
+    // Create the I2S channel configuration (for TX only)
+    i2s_chan_config_t chan_cfg = {
+        .id = I2S_NUM,
+        .role = I2S_ROLE_MASTER,    // Master role
+        .dma_desc_num = 8,          // Number of DMA descriptors
+        .dma_frame_num = 1024,      // DMA frame size
+        .auto_clear = true          // Auto clear on underflow
+    };
+
+    // Allocate the I2S channel (TX only, pass NULL for RX)
+    i2s_new_channel(&chan_cfg, &tx_channel, NULL);
+
+    // Apply the standard I2S configuration to the TX channel
+    i2s_channel_init_std_mode(tx_channel, &i2s_std_cfg);
+    i2s_channel_enable(tx_channel);
+}
+
+// Function to initialize the PIR sensor
+void init_pir_sensor() {
+    gpio_config_t io_conf;
+    io_conf.intr_type = GPIO_INTR_DISABLE;   // Disable interrupts for now
+    io_conf.mode = GPIO_MODE_INPUT;          // Set as input mode
+    io_conf.pin_bit_mask = (1ULL << PIR_IO); // Bit mask for the PIR pin
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    gpio_config(&io_conf);                   // Configure the GPIO with the settings
+}
+
+void play_audio() {
+    int i = 0;
+    int16_t sample16;
+    size_t bytes_written;
+
+    while (i < sampleCount) {
+        // Convert 8-bit signed sample to 16-bit signed (centered around 0)
+        sample16 = (int16_t)samples[i] << 8;
+
+        // Send the sample to the I2S peripheral
+        i2s_channel_write(tx_channel, &sample16, sizeof(sample16), &bytes_written, portMAX_DELAY);
+
+        i++;
+    }
+}
+
+void pir_task(void *pvParameter) {
+    int pir_state = 0;
+
+    while (1) {
+        // Read the state of the PIR sensor
+        pir_state = gpio_get_level(PIR_IO);
+
+        if (pir_state == 1) {
+            // Motion detected, play the sound
+            ESP_LOGI("PIR_TASK", "Motion detected! Playing sound...");
+            play_audio();
+            vTaskDelay(10000 / portTICK_PERIOD_MS);  
+        }
+
+        // Small delay to prevent rapid polling
+        vTaskDelay(1000 / portTICK_PERIOD_MS);  
+    }
+}
+
+void app_main() {
+    // Initialize I2S
+    i2s_init();
+
+    // Initialize the PIR sensor
+    init_pir_sensor();
+
+    // Create a FreeRTOS task to watch for motion
+    xTaskCreate(&pir_task, "pir_task", 2048, NULL, 5, NULL);
+}

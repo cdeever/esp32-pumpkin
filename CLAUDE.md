@@ -70,21 +70,46 @@ The application uses 4 concurrent FreeRTOS tasks orchestrated in `main/esp32pump
 
 ### Audio Sample System
 
-Audio files are converted to C header files containing PCM data arrays. Each header (e.g., `132806__nanakisan__evil-laugh-12.h`) exports:
+Audio files are converted to C header files containing PCM data arrays. Each header exports:
 ```c
 extern const unsigned int sampleRate;
 extern const unsigned int sampleCount;
 extern const signed char samples[];  // 8-bit PCM data
 ```
 
-The audio playback task (esp32pumpkin.c:73) converts 8-bit signed samples to 16-bit by left-shifting 8 bits before sending to I2S. Switch audio by changing the include in esp32pumpkin.c:12. Multiple pre-converted samples available in main/ directory.
+**Audio samples are selected at compile time via menuconfig.** Only the selected sample is compiled into the binary, significantly reducing flash usage.
+
+Available audio samples (in `main/audio/samples/`):
+- **Evil Laugh** (795KB) - default, classic Halloween sound
+- **Scream #14** (841KB) - high-pitched scream
+- **Angry Beast** (2.2MB) - growling beast, longest duration
+- **Zombie Growl** (556KB) - smallest file
+- **Ghost Moan** (2.8MB) - largest file
+- **Alien Snarl** (576KB) - alien creature sound
+- **Generic Scream** (720KB) - general scream effect
+
+To change the audio sample:
+```bash
+idf.py menuconfig
+# Navigate to: Component config -> ESP32 Pumpkin Audio Configuration
+# Select desired audio sample
+idf.py fullclean build flash
+```
+
+**Important**: Always run `idf.py fullclean` after changing the audio selection in menuconfig to ensure the correct sample is compiled.
+
+The audio playback task converts 8-bit signed samples to 16-bit by left-shifting 8 bits before sending to I2S.
 
 ## Code Organization
 
-- **main/esp32pumpkin.c**: Application entry point (app_main), I2S initialization, PIR sensor setup, audio playback task
-- **main/neopixel.c**: LED strip initialization, flame animation algorithm, strobe effect implementation
-- **main/neopixel.h**: Public interface for LED functions
-- **main/*.h**: Pre-converted audio sample headers (8-bit PCM arrays)
+- **main/esp32pumpkin.c**: Application entry point (app_main), initializes all subsystems and starts tasks
+- **main/audio/audio_manager.c**: I2S initialization, audio playback task, compile-time sample selection
+- **main/audio/audio_manager.h**: Public interface for audio management
+- **main/audio/samples/*.h**: Pre-converted audio sample headers (8-bit PCM arrays)
+- **main/sensors/pir_sensor.c**: PIR motion sensor handling
+- **main/leds/led_controller.c**: LED strip control, flame and strobe effects
+- **main/config.h**: Shared configuration constants and GPIO pin definitions
+- **main/Kconfig.projbuild**: Menuconfig options for audio sample selection
 - **CMakeLists.txt**: Root project configuration
 - **main/CMakeLists.txt**: Main component registration, links esp_driver_i2s, esp_driver_gpio, driver components
 - **sdkconfig**: ESP-IDF configuration (ESP32-S2 target, 2MB flash)
@@ -93,11 +118,24 @@ The audio playback task (esp32pumpkin.c:73) converts 8-bit signed samples to 16-
 
 ### Managing Audio Files
 
-To add new audio samples:
+**Selecting an audio sample:**
+1. Run `idf.py menuconfig`
+2. Navigate to: Component config → ESP32 Pumpkin Audio Configuration
+3. Select desired audio sample
+4. Save configuration and exit
+5. Run `idf.py fullclean build` to compile with the new sample
+
+**Adding new audio samples:**
 1. Convert audio to header using Bitluni's utility: https://bitluni.net/wp-content/uploads/2018/01/Audio2Header.html
-2. Place .h file in main/ directory
-3. Update include in esp32pumpkin.c:11-12
-4. Rebuild project
+2. Place .h file in `main/audio/samples/` directory
+3. Edit `main/Kconfig.projbuild`:
+   - Add new `config PUMPKIN_AUDIO_<NAME>` option in the choice block
+   - Include file size and description
+4. Edit `main/audio/audio_manager.c`:
+   - Add new `#elif defined(CONFIG_PUMPKIN_AUDIO_<NAME>)` case (around line 18-30)
+   - Include the new header file
+5. Run `idf.py menuconfig` to select the new sample
+6. Rebuild project with `idf.py fullclean build`
 
 ### GPIO Pin Definitions
 

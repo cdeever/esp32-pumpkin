@@ -1,0 +1,62 @@
+menu "ESP32 Pumpkin Audio Configuration"
+
+    choice PUMPKIN_AUDIO_SAMPLE
+        prompt "Audio Sample Selection"
+        default PUMPKIN_AUDIO_EVIL_LAUGH
+        help
+            Select which audio sample to compile into the firmware.
+            Only the selected sample will be included in the binary,
+            significantly reducing flash usage.
+
+            Sample sizes:
+            - Evil Laugh: 795KB
+            - Scream #14: 841KB
+            - Angry Beast: 2.2MB
+            - Zombie Growl: 556KB (smallest)
+            - Ghost Moan: 2.8MB (largest)
+            - Alien Snarl: 576KB
+            - Generic Scream: 720KB
+
+        config PUMPKIN_AUDIO_EVIL_LAUGH
+            bool "Evil Laugh (795KB)"
+            help
+                Classic evil laugh sound - good for traditional Halloween scares.
+                Sample rate: 48kHz, Duration: ~4.7 seconds
+
+        config PUMPKIN_AUDIO_SCREAM
+            bool "Scream #14 (841KB)"
+            help
+                High-pitched scream effect.
+                Sample rate: 48kHz, Duration: ~4.4 seconds
+
+        config PUMPKIN_AUDIO_ANGRY_BEAST
+            bool "Angry Beast (2.2MB)"
+            help
+                Growling beast sound - longest duration.
+                Warning: Largest file, may impact flash usage.
+
+        config PUMPKIN_AUDIO_ZOMBIE_GROWL
+            bool "Zombie Growl (556KB)"
+            help
+                Zombie-style growling - smallest file.
+                Good choice for minimal flash usage.
+
+        config PUMPKIN_AUDIO_GHOST_MOAN
+            bool "Ghost Moan (2.8MB)"
+            help
+                Ethereal ghost moaning - largest file.
+                Warning: May not fit on devices with limited flash.
+
+        config PUMPKIN_AUDIO_ALIEN_SNARL
+            bool "Alien Snarl (576KB)"
+            help
+                Alien creature snarling sound.
+
+        config PUMPKIN_AUDIO_GENERIC_SCREAM
+            bool "Generic Scream (720KB)"
+            help
+                Generic scream sound effect.
+
+    endchoice
+
+endmenu
